@@ -51,6 +51,3 @@ jobs:
           context: .  # Change if Dockerfile is in a subdirectory
           push: true
           tags: todorovski11/demo:latest
-
-      - name: Image digest
-        run: echo "Docker image digest: ${{ steps.build-and-push.outputs.digest }}"
