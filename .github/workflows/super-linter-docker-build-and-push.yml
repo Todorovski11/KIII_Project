@@ -2,9 +2,9 @@ name: Lint Code Base and Docker Build and Push
 
 on:
   push:
-    branches: [ "maste" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "main" ]
 
 jobs:
   run-lint:
@@ -53,4 +53,4 @@ jobs:
           tags: todorovski11/demo:latest
 
       - name: Image digest
-        run: echo "Docker image digest: ${{ steps.build-push.outputs.digest }}"
+        run: echo "Docker image digest: ${{ steps.build-and-push.outputs.digest }}"
