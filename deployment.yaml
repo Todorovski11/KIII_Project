@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+  namespace: my-namespace
+type: Opaque
+data:
+  POSTGRES_USER: cG9zdGdyZXM=  # base64 encoded value of 'postgres'
+  POSTGRES_PASSWORD: NDMyMQ==   # base64 encoded value of '4321'
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: my-namespace
+data:
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://db:5432/postgres"
+  SPRING_DATASOURCE_USERNAME: "postgres"
+  SPRING_DATASOURCE_PASSWORD: "4321"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db-d
+  namespace: my-namespace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db-d
+  template:
+    metadata:
+      labels:
+        app: db-d
+    spec:
+      containers:
+        - name: db-d
+          image: postgres:13
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: "postgres"
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: db-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: db-data
+          emptyDir: {}  # Use emptyDir for testing, replace with PersistentVolumeClaim for production
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: my-namespace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+        - name: app
+          image: todorovski11/demo
+          ports:
+            - containerPort: 8081  # Updated container port
+          env:
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: SPRING_DATASOURCE_URL
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: SPRING_JPA_HIBERNATE_DDL_AUTO
+      imagePullSecrets:
+        - name: regcred
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+  namespace: my-namespace
+spec:
+  selector:
+    app: app
+  ports:
+    - protocol: TCP
+      port: 8081             # Cluster IP service port
+      targetPort: 8081     # Application's container port
+      nodePort: 30080      # NodePort for external access (adjust this if needed)
+  type: NodePort
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: my-namespace
+spec:
+  selector:
+    app: db-d
+  ports:
+    - protocol: TCP
+      port: 5432          # Cluster IP service port for database
+      targetPort: 5432    # Database container port
+  type: ClusterIP         # Internal service for database
