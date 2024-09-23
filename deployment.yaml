@@ -1,3 +1,4 @@
+# Database Credentials Secret
 apiVersion: v1
 kind: Secret
 metadata:
@@ -10,65 +11,25 @@ data:
 
 ---
 
+# Application ConfigMap
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: app-config
   namespace: my-namespace
 data:
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://db:5432/postgres"
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://db-service:5432/postgres"  # Updated to reference the database service correctly
   SPRING_DATASOURCE_USERNAME: "postgres"
   SPRING_DATASOURCE_PASSWORD: "4321"
   SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
 
 ---
 
+# PostgreSQL Database Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: db-d
-  namespace: my-namespace
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: db-d
-  template:
-    metadata:
-      labels:
-        app: db-d
-    spec:
-      containers:
-        - name: db-d
-          image: postgres:13
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: db-credentials
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: db-credentials
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              value: "postgres"
-          ports:
-            - containerPort: 5432
-          volumeMounts:
-            - name: db-data
-              mountPath: /var/lib/postgresql/data
-      volumes:
-        - name: db-data
-          emptyDir: {}  # Use emptyDir for testing, replace with PersistentVolumeClaim for production
-
----
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: app
+  name: app-deployment
   namespace: my-namespace
 spec:
   replicas: 1
@@ -81,10 +42,54 @@ spec:
         app: app
     spec:
       containers:
-        - name: app
+        - name: app-container
           image: todorovski11/demo
           ports:
-            - containerPort: 8081  # Updated container port
+            - containerPort: 9090  # Change this to 9090
+          env:
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: SPRING_DATASOURCE_URL
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: SPRING_JPA_HIBERNATE_DDL_AUTO
+---
+
+# Application Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+  namespace: my-namespace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+        - name: app-container
+          image: todorovski11/demo
+          ports:
+            - containerPort: 8081  # Application's container port
           env:
             - name: SPRING_DATASOURCE_URL
               valueFrom:
@@ -111,33 +116,35 @@ spec:
 
 ---
 
+# Application Service
 apiVersion: v1
 kind: Service
 metadata:
-  name: app
+  name: app-service
   namespace: my-namespace
 spec:
   selector:
     app: app
   ports:
     - protocol: TCP
-      port: 8081             # Cluster IP service port
-      targetPort: 8081     # Application's container port
-      nodePort: 30080      # NodePort for external access (adjust this if needed)
+      port: 80              # Exposed service port
+      targetPort: 8081      # Application's container port
+      nodePort: 30080       # NodePort for external access (adjust if needed)
   type: NodePort
 
 ---
 
+# Database Service
 apiVersion: v1
 kind: Service
 metadata:
-  name: db
+  name: app-service
   namespace: my-namespace
 spec:
   selector:
-    app: db-d
+    app: app
   ports:
     - protocol: TCP
-      port: 5432          # Cluster IP service port for database
-      targetPort: 5432    # Database container port
-  type: ClusterIP         # Internal service for database
+      port: 80           # The port that the service will expose
+      targetPort: 9090   # The port where the application is listening
+  type: NodePort        # Internal service for database
